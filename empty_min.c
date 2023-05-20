@@ -82,7 +82,42 @@ Void heartBeatFxn(UArg arg0, UArg arg1)
     }
 }
 
+Void sensorFxn(UArg arg0, UArg arg1)
+{
+    bool worked, success;
+    uint16_t rawData = 0;
+    float convertedLux = 0;
+    char tempStr[40];
 
+    System_printf("\nTesting OPT3001 Sensor:\n");
+    init_i2c0();
+
+   sensorOpt3001Test();
+    System_printf("\n Success:\n");
+    System_flush();
+
+    // Initialize opt3001 sensor
+    sensorOpt3001Init();
+    sensorOpt3001Enable(true);
+    sensorOpt3001Enable(true);
+    sensorOpt3001Enable(true);
+
+
+    while(1){
+        Task_sleep(100);
+        success = sensorOpt3001Read(&rawData);
+
+        if(success){
+            sensorOpt3001Convert(rawData, &convertedLux);
+
+            sprintf(tempStr, "Lux: %5.2f\n", convertedLux);
+            System_printf("%s\n", tempStr);
+
+        }
+
+        System_flush();
+    }
+}
 /*
  *  ======== main ========
  */
@@ -114,10 +149,10 @@ int main(void)
     Task_construct(&task0Struct, (Task_FuncPtr)heartBeatFxn, &taskParams, NULL);
 
     /* Construct heartBeat Task  thread */
-//    Task_Params_init(&task1Params);
-//    task1Params.stackSize = TASKSTACKSIZE;
-//    task1Params.stack = &task1Stack;
-//    Task_construct(&task1Struct, (Task_FuncPtr)sensorFxn, &task1Params, NULL);
+    Task_Params_init(&task1Params);
+    task1Params.stackSize = TASKSTACKSIZE;
+    task1Params.stack = &task1Stack;
+    Task_construct(&task1Struct, (Task_FuncPtr)sensorFxn, &task1Params, NULL);
 
      /* Turn on user LED */
     GPIO_write(Board_LED0, Board_LED_ON);

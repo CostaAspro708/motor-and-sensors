@@ -1,6 +1,8 @@
 "./EK_TM4C1294XL.obj"
 "./empty_min.obj"
+"./drivers/VL53L0X.obj"
 "./drivers/i2cOptDriver.obj"
+"./drivers/i2cVL53L0XDriver.obj"
 "./drivers/opt3001.obj"
 "../EK_TM4C1294XL.cmd"
 -l"configPkg/linker.cmd"

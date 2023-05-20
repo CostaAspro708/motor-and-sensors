@@ -12,7 +12,9 @@ GEN_CMDS__FLAG := -l"configPkg/linker.cmd"
 ORDERED_OBJS += \
 "./EK_TM4C1294XL.obj" \
 "./empty_min.obj" \
+"./drivers/VL53L0X.obj" \
 "./drivers/i2cOptDriver.obj" \
+"./drivers/i2cVL53L0XDriver.obj" \
 "./drivers/opt3001.obj" \
 "../EK_TM4C1294XL.cmd" \
 $(GEN_CMDS__FLAG) \
@@ -149,8 +151,8 @@ empty_min_EK_TM4C1294XL_TI.out: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
 # Other Targets
 clean:
 	-$(RM) $(GEN_FILES__QUOTED)$(EXE_OUTPUTS__QUOTED)
-	-$(RM) "EK_TM4C1294XL.obj" "empty_min.obj" "drivers\i2cOptDriver.obj" "drivers\opt3001.obj" 
-	-$(RM) "EK_TM4C1294XL.d" "empty_min.d" "drivers\i2cOptDriver.d" "drivers\opt3001.d" 
+	-$(RM) "EK_TM4C1294XL.obj" "empty_min.obj" "drivers\VL53L0X.obj" "drivers\i2cOptDriver.obj" "drivers\i2cVL53L0XDriver.obj" "drivers\opt3001.obj" 
+	-$(RM) "EK_TM4C1294XL.d" "empty_min.d" "drivers\VL53L0X.d" "drivers\i2cOptDriver.d" "drivers\i2cVL53L0XDriver.d" "drivers\opt3001.d" 
 	-$(RMDIR) $(GEN_MISC_DIRS__QUOTED)
 	-@echo 'Finished clean'
 	-@echo ' '
