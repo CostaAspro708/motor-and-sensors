@@ -1,0 +1,14 @@
+A1.
+i2c0 is connected to the opt3001 sensor.
+
+A2.
+i2c is using port b pin 2 and 3.
+
+A3
+Config enable or 0xC410 is being written to the register address. 
+ 
+ A4
+ Conversion time field is 800ms when enable is called,
+ 
+ A5
+ most significant bit first
