@@ -26,14 +26,13 @@
 #include "grlib/grlib.h"
 #include "grlib/widget.h"
 #include "grlib/canvas.h"
-#include "Drivers/Kentec320x240x16_ssd2119_spi.h"
-#include "Drivers/touch.h"
+#include "drivers/Kentec320x240x16_ssd2119_spi.h"
+#include "drivers/touch.h"
 /* I2C driver header files */
-#include "Drivers/opt3001.h"
-//#include "Drivers/i2cOptDriver.h"
+#include "drivers/opt3001.h"
 /* Definition header file */
-#include "Drivers/globaldefines.h"
-#include "Drivers/motorlib.h"
+#include "drivers/globaldefines.h"
+#include "drivers/motorlib.h"
 /* Other useful library files */
 #include "inc/hw_memmap.h"
 #include "inc/hw_sysctl.h"
