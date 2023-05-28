@@ -2,22 +2,18 @@
 #include <xdc/std.h>
 #include <xdc/runtime/System.h>
 #include <xdc/runtime/Types.h>
-
 /* std header files */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
-
 /* BIOS Header files */
 #include <ti/sysbios/BIOS.h>
 #include <ti/sysbios/knl/Task.h>
 #include <ti/sysbios/knl/Swi.h>
 #include <ti/sysbios/knl/Semaphore.h>
 #include <ti/sysbios/hal/Hwi.h>
-#include <ti/sysbios/gates/GateHwi.h>
 #include <ti/sysbios/knl/Clock.h>
-
 /* TI-RTOS Header files */
 // #include <ti/drivers/EMAC.h>
 #include <ti/drivers/GPIO.h>
@@ -28,14 +24,11 @@
 // #include <ti/drivers/USBMSCHFatFs.h>
 // #include <ti/drivers/Watchdog.h>
 // #include <ti/drivers/WiFi.h>
-
 /* Board Header file */
 #include "Board.h"
-
 /* Tiva C series macros header files */
 #include "inc/hw_ints.h"
 #include "inc/hw_memmap.h"
-
 /* Tiva C series driverlib header files */
 #include "driverlib/sysctl.h"
 #include "driverlib/systick.h"
@@ -43,58 +36,52 @@
 #include "driverlib/timer.h"
 #include "driverlib/gpio.h"
 #include "driverlib/interrupt.h"
-#include "driverlib/fpu.h"
-#include "driverlib/udma.h"
 #include "driverlib/rom.h"
 #include "driverlib/rom_map.h"
-//#include "semaphore.h"
-
+#include "semaphore.h"
 /* grlib header files */
 #include "grlib/grlib.h"
 #include "grlib/widget.h"
 #include "grlib/canvas.h"
 #include "grlib/slider.h"
 #include "grlib/pushbutton.h"
-
 /* LCD drivers header files */
 #include "drivers/Kentec320x240x16_ssd2119_spi.h"
 #include "drivers/touch.h"
-
 // Utility
-#include "images.h"
+#include "utils/images.h"
 #include "utils/ustdlib.h"
-
-
-#ifdef ewarm
-#pragma data_alignment=1024
-tDMAControlTable psDMAControlTable[64];
-#elif defined(ccs)
-#pragma DATA_ALIGN(psDMAControlTable, 1024)
-tDMAControlTable psDMAControlTable[64];
-#else
-tDMAControlTable psDMAControlTable[64] __attribute__ ((aligned(1024)));
-#endif
 
 #define TASKSTACKSIZE   512
 
+// Tasks & Clock
 Task_Struct task0Struct, task1Struct;
 Char task0Stack[TASKSTACKSIZE], task1Stack[TASKSTACKSIZE];
 Clock_Struct clk1Struct;
 Clock_Handle clk1Handle;
-GateHwi_Handle gateHwi;
-GateHwi_Params gHwiprms;
-Semaphore_Params semParams;
-Semaphore_Handle semaphoreHandle;
-Swi_Handle SwiHandle;
-Hwi_Handle buttonHwiHandle;
-Hwi_Handle timerHwiHandle;
-
-uint32_t g_ui32SysClock;
+// panel ensemble
 uint32_t g_ui32Panel;
-int buttonPressed = 0;
+// blocks double start/stop button
 int StartingBlock = 0;
+// screen
 tContext sContext;
 tRectangle sRect;
+
+                    /* put in global*/
+// limits
+volatile int maxSpeed;
+volatile int minSpeed;
+int maxPower;
+int minPower;
+int maxSens1;
+int minSens1;
+int maxSens2;
+int minSens2;
+
+// check start/stop
+volatile bool buttonPressed = 0;
+                    /* put in global*/
+
 
 void Testing(UArg arg0, UArg arg1);
 void clk1Fxn(UArg arg0);
@@ -103,139 +90,155 @@ void initThread(void);
 void initLCD(void);
 void Screen(UArg arg0, UArg arg1);
 
-void OnControlPanel(tWidget *psWidget);
-void OnOptionPanel(tWidget *psWidget);
-void OnMainPanel(tWidget *psWidget);
+//void OnPrevious(tWidget *psWidget);
+//void OnNext(tWidget *psWidget);
+void OnControl(tWidget *psWidget);
+void OnOption(tWidget *psWidget);
+void OnMain(tWidget *psWidget);
 
-void IntroWid(tWidget *psWidget, tContext *psContext);
-void OnOption(tWidget *psWidget, int32_t i32Value);
+void mainPanel(tWidget *psWidget, tContext *psContext);
+void optionPanel(tWidget *psWidget, int32_t i32Value);
+void controlPanel (tWidget *psWidget, int32_t i32Value);
 extern tCanvasWidget g_psPanels[];
 
-//*****************************************************************************
-// The Main panel. Contains introductory text, Time, Motor speed and sensor outputs
-//*****************************************************************************
-Canvas(g_sIntroWid, g_psPanels, 0, 0, &g_sKentec320x240x16_SSD2119, 0, 24,
-       320, 166, CANVAS_STYLE_APP_DRAWN, 0, 0, 0, 0, 0, 0, IntroWid);
+// Main panel
+Canvas(g_smainPanel, g_psPanels + 1, 0, 0, &g_sKentec320x240x16_SSD2119, 0, 24,
+       320, 166, CANVAS_STYLE_APP_DRAWN, 0, 0, 0, 0, 0, 0, mainPanel);
 
+// Option panel
+Canvas(g_sOptionSlider5, g_psPanels + 2, 0, 0,
+       &g_sKentec320x240x16_SSD2119, 0, 30, 320, 20,
+       CANVAS_STYLE_TEXT | CANVAS_STYLE_TEXT_OPAQUE,
+       ClrBlack, 0, ClrWhite, &g_sFontCm20,
+       "MIN              MAX", 0, 0);
+Canvas(g_sOptionSlider4, g_psPanels + 2, &g_sOptionSlider5, 0,
+       &g_sKentec320x240x16_SSD2119, 135, 60, 50, 20,
+       CANVAS_STYLE_TEXT | CANVAS_STYLE_TEXT_OPAQUE,
+       ClrBlack, 0, ClrWhite, &g_sFontCm20, "Speed", 0, 0);
+Canvas(g_sOptionSlider3, g_psPanels + 2, &g_sOptionSlider4, 0,
+       &g_sKentec320x240x16_SSD2119, 135, 95, 50, 20,
+       CANVAS_STYLE_TEXT | CANVAS_STYLE_TEXT_OPAQUE,
+       ClrBlack, 0, ClrWhite, &g_sFontCm20, "Power", 0, 0);
+Canvas(g_sOptionSlider2, g_psPanels + 2, &g_sOptionSlider3, 0,
+       &g_sKentec320x240x16_SSD2119, 135, 130, 50, 20,
+       CANVAS_STYLE_TEXT | CANVAS_STYLE_TEXT_OPAQUE,
+       ClrBlack, 0, ClrWhite, &g_sFontCm20, "Sens1", 0, 0);
+Canvas(g_sOptionSlider, g_psPanels + 2, &g_sOptionSlider2, 0,
+       &g_sKentec320x240x16_SSD2119, 135, 165, 50, 20,
+       CANVAS_STYLE_TEXT | CANVAS_STYLE_TEXT_OPAQUE,
+       ClrBlack, 0, ClrWhite, &g_sFontCm20, "Sens2", 0, 0);
 
-//*****************************************************************************
-// Control panel. Set the limits here
-//*****************************************************************************
-Canvas(g_sSliderValueCanvas, g_psPanels + 1, 0, 0,
-       &g_sKentec320x240x16_SSD2119, 210, 30, 60, 40,
-       CANVAS_STYLE_TEXT | CANVAS_STYLE_TEXT_OPAQUE, ClrBlack, 0, ClrSilver,
-       &g_sFontCm24, "50%",
-       0, 0);
-
-tSliderWidget g_psSliders[] =
+tSliderWidget g_psSlidersOptions[] =
 {
-    SliderStruct(g_psPanels + 1, g_psSliders + 1, 0,
-                 &g_sKentec320x240x16_SSD2119, 5, 115, 220, 30, 0, 100, 25,
-                 (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_OUTLINE |
-                  SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),
-                 ClrGray, ClrBlack, ClrSilver, ClrWhite, ClrWhite,
-                 &g_sFontCm20, "25%", 0, 0, OnOption),
-    SliderStruct(g_psPanels + 1, g_psSliders + 2, 0,
-                 &g_sKentec320x240x16_SSD2119, 5, 155, 220, 25, 0, 100, 25,
-                 (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_OUTLINE |
-                  SL_STYLE_TEXT),
-                 ClrWhite, ClrBlueViolet, ClrSilver, ClrBlack, 0,
-                 &g_sFontCm18, "Foreground Text Only", 0, 0, OnOption),
-    SliderStruct(g_psPanels + 1, g_psSliders + 3, 0,
-                 &g_sKentec320x240x16_SSD2119, 240, 70, 26, 110, 0, 100, 50,
-                 (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_VERTICAL |
-                  SL_STYLE_OUTLINE | SL_STYLE_LOCKED), ClrDarkGreen,
-                  ClrDarkRed, ClrSilver, 0, 0, 0, 0, 0, 0, 0),
-    SliderStruct(g_psPanels + 1, g_psSliders + 4, 0,
-                 &g_sKentec320x240x16_SSD2119, 280, 30, 30, 150, 0, 100, 75,
-                 (SL_STYLE_IMG | SL_STYLE_BACKG_IMG | SL_STYLE_VERTICAL |
-                 SL_STYLE_OUTLINE), 0, ClrBlack, ClrSilver, 0, 0, 0,
-                 0, g_pui8GettingHotter28x148, g_pui8GettingHotter28x148Mono,
-                 OnOption),
-    SliderStruct(g_psPanels + 1, g_psSliders + 5, 0,
-                 &g_sKentec320x240x16_SSD2119, 5, 30, 195, 37, 0, 100, 50,
-                 SL_STYLE_IMG | SL_STYLE_BACKG_IMG, 0, 0, 0, 0, 0, 0,
-                 0, g_pui8GreenSlider195x37, g_pui8RedSlider195x37,
-                 OnOption),
-    SliderStruct(g_psPanels + 1, &g_sSliderValueCanvas, 0,
-                 &g_sKentec320x240x16_SSD2119, 5, 80, 220, 25, 0, 100, 50,
-                 (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_TEXT |
-                  SL_STYLE_BACKG_TEXT | SL_STYLE_TEXT_OPAQUE |
-                  SL_STYLE_BACKG_TEXT_OPAQUE),
-                 ClrBlue, ClrYellow, ClrSilver, ClrYellow, ClrBlue,
-                 &g_sFontCm18, "Text in both areas", 0, 0,
-                 OnOption),
+    // Speed
+    SliderStruct(g_psPanels + 2, g_psSlidersOptions + 1, 0,
+            &g_sKentec320x240x16_SSD2119, 5, 55, 125, 30, 0, 100, 25,
+            (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_OUTLINE |
+            SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),
+            ClrLimeGreen, ClrBlack, ClrLimeGreen, ClrWhite, ClrWhite,
+            &g_sFontCm20, "25%", 0, 0, optionPanel),
+    SliderStruct(g_psPanels + 2, g_psSlidersOptions + 2, 0,
+            &g_sKentec320x240x16_SSD2119, 190, 55, 125, 30, 0, 100, 50,
+            (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_OUTLINE |
+            SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),
+            ClrLimeGreen, ClrBlack, ClrLimeGreen, ClrWhite, ClrWhite,
+            &g_sFontCm20, "50%", 0, 0, optionPanel),
+
+    // Power
+    SliderStruct(g_psPanels + 2, g_psSlidersOptions + 3, 0,
+            &g_sKentec320x240x16_SSD2119, 5, 90, 125, 30, 0, 100, 25,
+            (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_OUTLINE |
+            SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),
+            ClrBlue, ClrBlack, ClrBlue, ClrWhite, ClrWhite,
+            &g_sFontCm20, "25%", 0, 0, optionPanel),
+    SliderStruct(g_psPanels + 2, g_psSlidersOptions + 4, 0,
+            &g_sKentec320x240x16_SSD2119, 190, 90, 125, 30, 0, 100, 50,
+            (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_OUTLINE |
+            SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),
+            ClrBlue, ClrBlack, ClrBlue, ClrWhite, ClrWhite,
+            &g_sFontCm20, "50%", 0, 0, optionPanel),
+
+      // Sens1
+    SliderStruct(g_psPanels + 2, g_psSlidersOptions + 5, 0,
+            &g_sKentec320x240x16_SSD2119, 5, 125, 125, 30, 0, 100, 25,
+            (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_OUTLINE |
+            SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),
+            ClrGold, ClrBlack, ClrGold, ClrWhite, ClrWhite,
+            &g_sFontCm20, "25%", 0, 0, optionPanel),
+    SliderStruct(g_psPanels + 2, g_psSlidersOptions + 6, 0,
+            &g_sKentec320x240x16_SSD2119, 190, 125, 125, 30, 0, 100, 50,
+            (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_OUTLINE |
+            SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),
+            ClrGold, ClrBlack, ClrGold, ClrWhite, ClrWhite,
+            &g_sFontCm20, "50%", 0, 0, optionPanel),
+
+        // Sens2
+    SliderStruct(g_psPanels + 2, g_psSlidersOptions + 7, 0,
+            &g_sKentec320x240x16_SSD2119, 5, 160, 125, 30, 0, 100, 25,
+            (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_OUTLINE |
+            SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),
+            ClrRed, ClrBlack, ClrRed, ClrWhite, ClrWhite,
+            &g_sFontCm20, "25%", 0, 0, optionPanel),
+    SliderStruct(g_psPanels + 2, &g_sOptionSlider, 0,
+            &g_sKentec320x240x16_SSD2119, 190, 160, 125, 30, 0, 100, 50,
+            (SL_STYLE_FILL | SL_STYLE_BACKG_FILL | SL_STYLE_OUTLINE |
+            SL_STYLE_TEXT | SL_STYLE_BACKG_TEXT),
+            ClrRed, ClrBlack, ClrRed, ClrWhite, ClrWhite,
+            &g_sFontCm20, "50%", 0, 0, optionPanel),
 };
 
-#define SLIDER_TEXT_VAL_INDEX   0
-#define SLIDER_LOCKED_INDEX     2
-#define SLIDER_CANVAS_VAL_INDEX 4
+#define SPEED_LEFT_INDEX   0
+#define SPEED_RIGHT_INDEX  1
+#define POWER_LEFT_INDEX   2
+#define POWER_RIGHT_INDEX  3
+#define SENS1_LEFT_INDEX   4
+#define SENS1_RIGHT_INDEX  5
+#define SENS2_LEFT_INDEX   6
+#define SENS2_RIGHT_INDEX  7
+#define NUM_SLIDERS (sizeof(g_psSlidersOptions) / sizeof(g_psSlidersOptions[0]))
 
-#define NUM_SLIDERS (sizeof(g_psSliders) / sizeof(g_psSliders[0]))
+// Control Panel
 
-//*****************************************************************************
-//
-// An array of canvas widgets, one per panel.  Each canvas is filled with
-// black, overwriting the contents of the previous panel.
-//
-//*****************************************************************************
+Canvas(g_sControlPanel, g_psPanels, 0, 0, &g_sKentec320x240x16_SSD2119,
+       245, 35, 60, 20, CANVAS_STYLE_TEXT | CANVAS_STYLE_TEXT_OPAQUE,
+       ClrBlack, 0, ClrWhite, &g_sFontCm20, "315rpm", 0, 0);
+
+tSliderWidget g_psSlidersControl[] =
+{
+    SliderStruct(g_psPanels, &g_sControlPanel, 0,
+         &g_sKentec320x240x16_SSD2119, 5, 30, 230, 30, 0, 1000, 315,
+         (SL_STYLE_FILL | SL_STYLE_TEXT | SL_STYLE_OUTLINE |
+          SL_STYLE_BACKG_TEXT | SL_STYLE_TEXT_OPAQUE | SL_STYLE_BACKG_TEXT_OPAQUE),
+         ClrLimeGreen, ClrBlack, ClrLimeGreen, ClrWhite, ClrWhite,
+         &g_sFontCm20, "Motor Speed", 0, 0, controlPanel),
+};
+#define SPEED_SET_INDEX 0
+
+// Array of black pannels (filled by &*)
 tCanvasWidget g_psPanels[] =
 {
-    CanvasStruct(0, 0, &g_sIntroWid, &g_sKentec320x240x16_SSD2119, 0, 24,
+    CanvasStruct(0, 0, &g_psSlidersControl, &g_sKentec320x240x16_SSD2119, 0, 24,
                  320, 166, CANVAS_STYLE_FILL, ClrBlack, 0, 0, 0, 0, 0, 0),
-    CanvasStruct(0, 0, g_psSliders, &g_sKentec320x240x16_SSD2119, 0,
-                 24, 320, 166, CANVAS_STYLE_FILL, ClrBlack, 0, 0, 0, 0, 0, 0),
+    CanvasStruct(0, 0, &g_smainPanel, &g_sKentec320x240x16_SSD2119, 0, 24,
+                 320, 166, CANVAS_STYLE_FILL, ClrBlack, 0, 0, 0, 0, 0, 0),
+    CanvasStruct(0, 0, g_psSlidersOptions, &g_sKentec320x240x16_SSD2119, 0, 24,
+                 320, 166, CANVAS_STYLE_FILL, ClrBlack, 0, 0, 0, 0, 0, 0),
+
 };
+#define NUM_PANELS (sizeof(g_psPanels) / sizeof(g_psPanels[0]))
 
-//*****************************************************************************
-//
-// The number of panels.
-//
-//*****************************************************************************
-#define NUM_PANELS              (sizeof(g_psPanels) / sizeof(g_psPanels[0]))
-
-//*****************************************************************************
-//
-// The names for each of the panels, which is displayed at the bottom of the
-// screen.
-//
-//*****************************************************************************
-char *g_pcPanei32Names[] =
-{
-    "     Instructions     ",
-    "     Control     "
-};
-
-//*****************************************************************************
-//
-// The buttons and text across the bottom of the screen.
-//
-//*****************************************************************************
-RectangularButton(g_sControls, 0, 0, 0, &g_sKentec320x240x16_SSD2119, 0, 190,
-                  50, 50, PB_STYLE_IMG | PB_STYLE_TEXT, ClrBlack, ClrBlack, 0, ClrSilver,
-                  &g_sFontCm20, "Controls", g_pui8Blue50x50, g_pui8Blue50x50Press, 0, 0,
-                  OnControlPanel);
-
-Canvas(g_sTitle, 0, 0, 0, &g_sKentec320x240x16_SSD2119, 50, 190, 220, 50,
-       CANVAS_STYLE_TEXT | CANVAS_STYLE_TEXT_OPAQUE, 0, 0, ClrSilver,
-       &g_sFontCm20, 0, 0, 0);
-
-RectangularButton(g_sOption, 0, 0, 0, &g_sKentec320x240x16_SSD2119, 270, 190,
-                  50, 50, PB_STYLE_IMG | PB_STYLE_TEXT, ClrBlack, ClrBlack, 0,
-                  ClrSilver, &g_sFontCm20, "Options", g_pui8Blue50x50,
-                  g_pui8Blue50x50Press, 0, 0, OnOptionPanel);
-
-RectangularButton(g_sMainL, 0, 0, 0, &g_sKentec320x240x16_SSD2119, 0, 190,
-                  50, 50, PB_STYLE_IMG | PB_STYLE_TEXT, ClrBlack, ClrBlack, 0, ClrSilver,
-                  &g_sFontCm20, "MainL", g_pui8Blue50x50, g_pui8Blue50x50Press, 0, 0,
-                  OnMainPanel);
-
-RectangularButton(g_sMainR, 0, 0, 0, &g_sKentec320x240x16_SSD2119, 270, 190,
-                  50, 50, PB_STYLE_IMG | PB_STYLE_TEXT, ClrBlack, ClrBlack, 0,
-                  ClrSilver, &g_sFontCm20, "MainR", g_pui8Blue50x50,
-                  g_pui8Blue50x50Press, 0, 0, OnMainPanel);
-
-
+RectangularButton(g_sOption, 0, 0, 0, &g_sKentec320x240x16_SSD2119, 10, 195,
+                  80, 40, PB_STYLE_FILL | PB_STYLE_OUTLINE | PB_STYLE_TEXT | PB_STYLE_AUTO_REPEAT,
+                  ClrSilver, 0, 0, ClrWhite, &g_sFontCm20, "Option", g_pui8Blue50x50,
+                  g_pui8Blue50x50Press, 0, 0, OnOption);
+RectangularButton(g_sControl, 0, 0, 0, &g_sKentec320x240x16_SSD2119, 230, 195,
+                  80, 40, PB_STYLE_FILL | PB_STYLE_OUTLINE | PB_STYLE_TEXT | PB_STYLE_AUTO_REPEAT,
+                  ClrSilver, 0, 0, ClrWhite, &g_sFontCm20, "Control", g_pui8Blue50x50,
+                  g_pui8Blue50x50Press, 0, 0, OnControl);
+RectangularButton(g_sMain, 0, 0, 0, &g_sKentec320x240x16_SSD2119, 120, 195,
+                  80, 40, PB_STYLE_FILL | PB_STYLE_OUTLINE | PB_STYLE_TEXT | PB_STYLE_AUTO_REPEAT,
+                  ClrSilver, 0, 0, ClrWhite, &g_sFontCm20, "Main", 0,
+                  0, 0, 0, OnMain);
 
 //  ======== main ========
 void main(void)
@@ -245,93 +248,50 @@ void main(void)
     initLCD();
     BIOS_start();
 }
-
+//  ======== main ========
 
 void initLCD(void) {
-
-    FPUEnable();
-    FPULazyStackingEnable();
-
-    g_ui32SysClock = MAP_SysCtlClockFreqSet((SYSCTL_XTAL_25MHZ |
-                                             SYSCTL_OSC_MAIN |
-                                             SYSCTL_USE_PLL |
-                                             SYSCTL_CFG_VCO_480), 120000000);
+    Types_FreqHz cpuFreq;
+    BIOS_getCpuFreq(&cpuFreq);
 
     // Initialize display driver and graphics
-    Kentec320x240x16_SSD2119Init(g_ui32SysClock);
+    Kentec320x240x16_SSD2119Init((uint32_t)cpuFreq.lo);
     GrContextInit(&sContext, &g_sKentec320x240x16_SSD2119);
-
-    //
-    // Fill the top 24 rows of the screen with blue to create the banner.
-    //
     sRect.i16XMin = 0;
     sRect.i16YMin = 0;
     sRect.i16XMax = GrContextDpyWidthGet(&sContext) - 1;
     sRect.i16YMax = 23;
     GrContextForegroundSet(&sContext, ClrDarkBlue);
     GrRectFill(&sContext, &sRect);
-
-    //
-    // Put a white box around the banner.
-    //
     GrContextForegroundSet(&sContext, ClrWhite);
     GrRectDraw(&sContext, &sRect);
-
-    //
-    // Put the application name in the middle of the banner.
-    //
     GrContextFontSet(&sContext, &g_sFontCm20);
     GrStringDrawCentered(&sContext, "EGH 456 - Motor Control", -1,
                          GrContextDpyWidthGet(&sContext) / 2, 8, 0);
 
-    // data transfer init
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_UDMA);
-    SysCtlDelay(10);
-    uDMAControlBaseSet(&psDMAControlTable[0]);
-    uDMAEnable();
-
-    //TouchScreenInit(g_ui32SysClock);
-
-    //
-    // Initialize the touch screen driver and have it route its messages to the
-    // widget tree.
-    //
-
+    //TouchScreenInit((uint32_t)cpuFreq.lo);
     //TouchScreenCallbackSet(WidgetPointerMessage);
+    System_printf("Touch Initialized\n");
+    System_flush();
 
-    //
-    // Add the title block and the previous and next buttons to the widget
-    // tree.
-    //
-    WidgetAdd(WIDGET_ROOT, (tWidget *)&g_sControls);
-    WidgetAdd(WIDGET_ROOT, (tWidget *)&g_sTitle);
     WidgetAdd(WIDGET_ROOT, (tWidget *)&g_sOption);
-    WidgetAdd(WIDGET_ROOT, (tWidget *)&g_sMainL);
-    WidgetAdd(WIDGET_ROOT, (tWidget *)&g_sMainR);
+    WidgetAdd(WIDGET_ROOT, (tWidget *)&g_sControl);
+    //WidgetAdd(WIDGET_ROOT, (tWidget *)&g_sMain);
 
-    //
-    // Add the first panel to the widget tree.
-    //
     g_ui32Panel = 0;
     WidgetAdd(WIDGET_ROOT, (tWidget *)g_psPanels);
-    CanvasTextSet(&g_sTitle, g_pcPanei32Names[0]);
-
-    //
-    // Issue the initial paint request to the widgets.
-    //
     WidgetPaint(WIDGET_ROOT);
-
-    //
-    // Loop forever handling widget messages.
-    //
 }
 
 // Initialize
 void initThread(void){
-    /* Call board init functions */
+
+    Task_Params taskParams;
+    Clock_Params clkParams;
+
     Board_initGeneral();
-    // Board_initEMAC();
     Board_initGPIO();
+    // Board_initEMAC();
     // Board_initI2C();
     // Board_initSDSPI();
     // Board_initSPI();
@@ -341,14 +301,12 @@ void initThread(void){
     // Board_initWatchdog();
     // Board_initWiFi();
 
-    Task_Params taskParams;
-    Clock_Params clkParams;
-
+    // Session time
     Clock_Params_init(&clkParams);
     clkParams.period = 1000;
     clkParams.startFlag = FALSE;
 
-    /* Construct heartBeat Task  thread */
+    //Screen interrupts
     Task_Params_init(&taskParams);
     taskParams.arg0 = 1000;
     taskParams.stackSize = TASKSTACKSIZE;
@@ -356,11 +314,12 @@ void initThread(void){
     taskParams.priority = 1;
     Task_construct(&task1Struct, (Task_FuncPtr)Screen, &taskParams, NULL);
 
+    // Beat interrupt
     taskParams.stack = &task0Stack;
     taskParams.priority = 2;
     Task_construct(&task0Struct, (Task_FuncPtr)Testing, &taskParams, NULL);
 
-    // install callback and set interrupts
+    // Start/Stop
     GPIO_setCallback(Board_BUTTON0, (GPIO_CallbackFxn)gpioButtonFxn0);
     GPIO_enableInt(Board_BUTTON0);
 
@@ -375,10 +334,18 @@ void Screen(UArg arg0, UArg arg1)
 {
     while(1)
         {
+            //here will be all the graphs
+            /*
+             *
+             *
+             *
+             *
+             */
+
             // Process any messages in the widget message queue.
             WidgetMessageQueueProcess();
+            Task_sleep(10);
         }
-
 }
 
 // Clock for session time
@@ -387,7 +354,10 @@ void clk1Fxn(UArg arg0)
     UInt32 time;
     time = Clock_getTicks();
     System_printf("System time in clk1Fxn = %lu\n", (ULong)time);
-    if(buttonPressed == 1 && StartingBlock < 3){
+    if(buttonPressed == 0){
+        StartingBlock = 0;
+    }
+    else if(buttonPressed == 1 && StartingBlock < 3){
         StartingBlock++;
     }
 }
@@ -402,7 +372,7 @@ void gpioButtonFxn0(void)
 
     else if (StartingBlock >= 2){
         GPIO_write(Board_LED1, Board_LED_OFF);
-        BIOS_exit(0);
+        buttonPressed = 0;
     }
 
 }
@@ -420,187 +390,23 @@ void Testing(UArg arg0, UArg arg1)
     }
 }
 
-void
-OnControlPanel(tWidget *psWidget)
+void controlPanel (tWidget *psWidget, int32_t i32Value)
 {
-    //
-    // There is nothing to be done if the first panel is already being
-    // displayed.
-    //
-    if(g_ui32Panel == 1)
+    static char pcCanvasText[5];
+
+    if(psWidget == (tWidget *)&g_psSlidersControl[SPEED_SET_INDEX])
     {
-        return;
+        // semaphore_pend
+        // send speed value to motor
+        // semaphore_post
+        sprintf(pcCanvasText, "%3drpm", i32Value);
+        CanvasTextSet(&g_sControlPanel, pcCanvasText);
+        WidgetPaint((tWidget *)&g_sControlPanel);
     }
-
-    //
-    // Remove the current panel.
-    //
-    WidgetRemove((tWidget *)(g_psPanels + g_ui32Panel));
-
-    //
-    // Decrement the panel index.
-    //
-    g_ui32Panel = 1;
-
-    //
-    // Add and draw the new panel.
-    //
-    WidgetAdd(WIDGET_ROOT, (tWidget *)(g_psPanels + g_ui32Panel));
-    WidgetPaint((tWidget *)(g_psPanels + g_ui32Panel));
-
-    //
-    // Set the title of this panel.
-    //
-    CanvasTextSet(&g_sTitle, g_pcPanei32Names[g_ui32Panel]);
-    WidgetPaint((tWidget *)&g_sTitle);
-
-
-    PushButtonImageOff(&g_sControls);
-    PushButtonTextOff(&g_sControls);
-    PushButtonFillOn(&g_sControls);
-    WidgetPaint((tWidget *)&g_sControls);
-    PushButtonImageOn(&g_sOption);
-    PushButtonTextOn(&g_sOption);
-    PushButtonFillOff(&g_sOption);
-    WidgetPaint((tWidget *)&g_sOption);
-
-
-    PushButtonImageOn(&g_sMainL);
-    PushButtonTextOn(&g_sMainL);
-    PushButtonFillOff(&g_sMainL);
-    WidgetPaint((tWidget *)&g_sMainL);
-
 }
 
-//*****************************************************************************
-//
-// Handles presses of the next panel button.
-//
-//*****************************************************************************
-void
-OnOptionPanel(tWidget *psWidget)
+void mainPanel(tWidget *psWidget, tContext *psContext)
 {
-    //
-    // There is nothing to be done if the last panel is already being
-    // displayed.
-    //
-    if(g_ui32Panel == 2)
-    {
-        return;
-    }
-
-    //
-    // Remove the current panel.
-    //
-    WidgetRemove((tWidget *)(g_psPanels + g_ui32Panel));
-
-    //
-    // Increment the panel index.
-    //
-    g_ui32Panel = 2;
-
-    //
-    // Add and draw the new panel.
-    //
-    WidgetAdd(WIDGET_ROOT, (tWidget *)(g_psPanels + g_ui32Panel));
-    WidgetPaint((tWidget *)(g_psPanels + g_ui32Panel));
-
-    //
-    // Set the title of this panel.
-    //
-    CanvasTextSet(&g_sTitle, g_pcPanei32Names[g_ui32Panel]);
-    WidgetPaint((tWidget *)&g_sTitle);
-
-    //
-    // See if the previous panel was the first panel.
-    //
-
-    PushButtonImageOn(&g_sMainR);
-    PushButtonTextOn(&g_sMainR);
-    PushButtonFillOff(&g_sMainR);
-    WidgetPaint((tWidget *)&g_sMainR);
-
-    //
-    // Clear the next button from the display since the last panel is being
-    // displayed.
-    //
-    PushButtonImageOff(&g_sOption);
-    PushButtonTextOff(&g_sOption);
-    PushButtonFillOn(&g_sOption);
-    WidgetPaint((tWidget *)&g_sOption);
-    PushButtonImageOn(&g_sControls);
-    PushButtonTextOn(&g_sControls);
-    PushButtonFillOff(&g_sControls);
-    WidgetPaint((tWidget *)&g_sControls);
-
-}
-
-void OnMainPanel(tWidget *psWidget) {
-
-    if(g_ui32Panel == 0)
-    {
-        return;
-    }
-
-    //
-    // Remove the current panel.
-    //
-    WidgetRemove((tWidget *)(g_psPanels + g_ui32Panel));
-    uint32_t temp = g_ui32Panel;
-    //
-    // Decrement the panel index.
-    //
-    g_ui32Panel = 0;
-
-    //
-    // Add and draw the new panel.
-    //
-    WidgetAdd(WIDGET_ROOT, (tWidget *)(g_psPanels + g_ui32Panel));
-    WidgetPaint((tWidget *)(g_psPanels + g_ui32Panel));
-
-    //
-    // Set the title of this panel.
-    //
-    CanvasTextSet(&g_sTitle, g_pcPanei32Names[g_ui32Panel]);
-    WidgetPaint((tWidget *)&g_sTitle);
-
-    if (temp == 1)
-    {
-        PushButtonImageOff(&g_sMainR);
-        PushButtonTextOff(&g_sMainR);
-        PushButtonFillOn(&g_sMainR);
-        WidgetPaint((tWidget *)&g_sMainR);
-    }
-    if (temp == 2)
-    {
-        PushButtonImageOff(&g_sMainL);
-        PushButtonTextOff(&g_sMainL);
-        PushButtonFillOn(&g_sMainL);
-        WidgetPaint((tWidget *)&g_sMainL);
-    }
-
-    PushButtonImageOn(&g_sOption);
-    PushButtonTextOn(&g_sOption);
-    PushButtonFillOff(&g_sOption);
-    WidgetPaint((tWidget *)&g_sOption);
-    PushButtonImageOn(&g_sControls);
-    PushButtonTextOn(&g_sControls);
-    PushButtonFillOff(&g_sControls);
-    WidgetPaint((tWidget *)&g_sControls);
-
-}
-
-//*****************************************************************************
-//
-// Handles paint requests for the IntroWid canvas widget.
-//
-//*****************************************************************************
-void
-IntroWid(tWidget *psWidget, tContext *psContext)
-{
-    //
-    // Display the IntroWid text in the canvas.
-    //
     GrContextFontSet(psContext, &g_sFontCm20);
     GrContextForegroundSet(psContext, ClrWhite);
     GrStringDraw(psContext, "Press SW1 to start the Motor", -1,
@@ -614,45 +420,162 @@ IntroWid(tWidget *psWidget, tContext *psContext)
                  132, 0);
 }
 
-
-//*****************************************************************************
-//
-// Handles notifications from the slider controls.
-//
-//*****************************************************************************
-void
-OnOption(tWidget *psWidget, int32_t i32Value)
+void optionPanel(tWidget *psWidget, int32_t i32Value)
 {
-    static char pcCanvasText[5];
     static char pcSliderText[5];
 
-    //
-    // Is this the widget whose value we mirror in the canvas widget and the
-    // locked slider?
-    //
-    if(psWidget == (tWidget *)&g_psSliders[SLIDER_CANVAS_VAL_INDEX])
+    //SPEED_LEFT_INDEX
+    if(psWidget == (tWidget *)&g_psSlidersOptions[SPEED_LEFT_INDEX])
     {
-        //
-        // Yes - update the canvas to show the slider value.
-        //
-        usprintf(pcCanvasText, "%3d%%", i32Value);
-        CanvasTextSet(&g_sSliderValueCanvas, pcCanvasText);
-        WidgetPaint((tWidget *)&g_sSliderValueCanvas);
-
-        //
-        // Also update the value of the locked slider to reflect this one.
-        //
-        SliderValueSet(&g_psSliders[SLIDER_LOCKED_INDEX], i32Value);
-        WidgetPaint((tWidget *)&g_psSliders[SLIDER_LOCKED_INDEX]);
+        sprintf(pcSliderText, "%3d%%", i32Value);
+        uint32_t minSpeed = i32Value;
+        SliderTextSet(&g_psSlidersOptions[SPEED_LEFT_INDEX], pcSliderText);
+        WidgetPaint((tWidget *)&g_psSlidersOptions[SPEED_LEFT_INDEX]);
     }
-
-    if(psWidget == (tWidget *)&g_psSliders[SLIDER_TEXT_VAL_INDEX])
+    //SPEED_RIGHT_INDEX
+    else if(psWidget == (tWidget *)&g_psSlidersOptions[SPEED_RIGHT_INDEX])
+        {
+        sprintf(pcSliderText, "%3d%%", i32Value);
+        uint32_t maxSpeed = i32Value;
+        SliderTextSet(&g_psSlidersOptions[SPEED_RIGHT_INDEX], pcSliderText);
+        WidgetPaint((tWidget *)&g_psSlidersOptions[SPEED_RIGHT_INDEX]);
+    }
+    //POWER_LEFT_INDEX
+    else if(psWidget == (tWidget *)&g_psSlidersOptions[POWER_LEFT_INDEX])
     {
-        //
-        // Yes - update the canvas to show the slider value.
-        //
-        usprintf(pcSliderText, "%3d%%", i32Value);
-        SliderTextSet(&g_psSliders[SLIDER_TEXT_VAL_INDEX], pcSliderText);
-        WidgetPaint((tWidget *)&g_psSliders[SLIDER_TEXT_VAL_INDEX]);
+        sprintf(pcSliderText, "%3d%%", i32Value);
+        uint32_t minPower = i32Value;
+        SliderTextSet(&g_psSlidersOptions[POWER_LEFT_INDEX], pcSliderText);
+        WidgetPaint((tWidget *)&g_psSlidersOptions[POWER_LEFT_INDEX]);
     }
+    //POWER_RIGHT_INDEX
+    else if(psWidget == (tWidget *)&g_psSlidersOptions[POWER_RIGHT_INDEX])
+        {
+        sprintf(pcSliderText, "%3d%%", i32Value);
+        uint32_t maxPower = i32Value;
+        SliderTextSet(&g_psSlidersOptions[POWER_RIGHT_INDEX], pcSliderText);
+        WidgetPaint((tWidget *)&g_psSlidersOptions[POWER_RIGHT_INDEX]);
+    }
+    //SENS1_LEFT_INDEX
+    else if(psWidget == (tWidget *)&g_psSlidersOptions[SENS1_LEFT_INDEX])
+    {
+        sprintf(pcSliderText, "%3d%%", i32Value);
+        uint32_t minSens1 = i32Value;
+        SliderTextSet(&g_psSlidersOptions[SENS1_LEFT_INDEX], pcSliderText);
+        WidgetPaint((tWidget *)&g_psSlidersOptions[SENS1_LEFT_INDEX]);
+    }
+    //SENS1_RIGHT_INDEX
+    else if(psWidget == (tWidget *)&g_psSlidersOptions[SENS1_RIGHT_INDEX])
+        {
+        sprintf(pcSliderText, "%3d%%", i32Value);
+        uint32_t maxSens1 = i32Value;
+        SliderTextSet(&g_psSlidersOptions[SENS1_RIGHT_INDEX], pcSliderText);
+        WidgetPaint((tWidget *)&g_psSlidersOptions[SENS1_RIGHT_INDEX]);
+    }
+    //SENS2_LEFT_INDEX
+    else if(psWidget == (tWidget *)&g_psSlidersOptions[SENS2_LEFT_INDEX])
+    {
+        sprintf(pcSliderText, "%3d%%", i32Value);
+        uint32_t minSens2 = i32Value;
+        SliderTextSet(&g_psSlidersOptions[SENS2_LEFT_INDEX], pcSliderText);
+        WidgetPaint((tWidget *)&g_psSlidersOptions[SENS2_LEFT_INDEX]);
+    }
+    //SENS2_RIGHT_INDEX
+    else if(psWidget == (tWidget *)&g_psSlidersOptions[SENS2_RIGHT_INDEX])
+        {
+        sprintf(pcSliderText, "%3d%%", i32Value);
+        uint32_t maxSens2 = i32Value;
+        SliderTextSet(&g_psSlidersOptions[SENS2_RIGHT_INDEX], pcSliderText);
+        WidgetPaint((tWidget *)&g_psSlidersOptions[SENS2_RIGHT_INDEX]);
+    }
+}
+
+void OnOption(tWidget *psWidget) // Option screen = 1
+{
+    // if click while on panel, return
+    if(g_ui32Panel == 1)
+    {return;}
+
+    // else, remove the current panel.
+    WidgetRemove((tWidget *)(g_psPanels + g_ui32Panel));
+
+    // set to Option panel
+    g_ui32Panel = 1;
+    WidgetAdd(WIDGET_ROOT, (tWidget *)(g_psPanels + g_ui32Panel));
+    WidgetPaint((tWidget *)(g_psPanels + g_ui32Panel));
+
+    // add buttons to link other pages
+    PushButtonImageOff(&g_sOption);
+    PushButtonTextOff(&g_sOption);
+    PushButtonFillOn(&g_sOption);
+    WidgetPaint((tWidget *)&g_sOption);
+
+    PushButtonImageOn(&g_sControl);
+    PushButtonTextOn(&g_sControl);
+    PushButtonFillOff(&g_sControl);
+    WidgetPaint((tWidget *)&g_sControl);
+    PushButtonImageOn(&g_sMain);
+    PushButtonTextOn(&g_sMain);
+    PushButtonFillOff(&g_sMain);
+    WidgetPaint((tWidget *)&g_sMain);
+}
+
+void OnMain(tWidget *psWidget) // main Screen = 0
+{
+    // if click while on panel, return
+    if(g_ui32Panel == 0)
+    {return;}
+
+    // else, remove the current panel.
+    WidgetRemove((tWidget *)(g_psPanels + g_ui32Panel));
+
+    // set to Main panel
+    g_ui32Panel = 0;
+    WidgetAdd(WIDGET_ROOT, (tWidget *)(g_psPanels + g_ui32Panel));
+    WidgetPaint((tWidget *)(g_psPanels + g_ui32Panel));
+
+    // add buttons to link other pages
+    PushButtonImageOff(&g_sMain);
+    PushButtonTextOff(&g_sMain);
+    PushButtonFillOn(&g_sMain);
+    WidgetPaint((tWidget *)&g_sMain);
+
+    PushButtonImageOn(&g_sControl);
+    PushButtonTextOn(&g_sControl);
+    PushButtonFillOff(&g_sControl);
+    WidgetPaint((tWidget *)&g_sControl);
+    PushButtonImageOn(&g_sOption);
+    PushButtonTextOn(&g_sOption);
+    PushButtonFillOff(&g_sOption);
+    WidgetPaint((tWidget *)&g_sOption);
+}
+
+void OnControl(tWidget *psWidget) // Option screen = 1
+{
+    // if click while on panel, return
+    if(g_ui32Panel == 2)
+    {return;}
+
+    // else, remove the current panel.
+    WidgetRemove((tWidget *)(g_psPanels + g_ui32Panel));
+
+    // set to control panel
+    g_ui32Panel = 2;
+    WidgetAdd(WIDGET_ROOT, (tWidget *)(g_psPanels + g_ui32Panel));
+    WidgetPaint((tWidget *)(g_psPanels + g_ui32Panel));
+
+    // add buttons to link other pages
+    PushButtonImageOff(&g_sControl);
+    PushButtonTextOff(&g_sControl);
+    PushButtonFillOn(&g_sControl);
+    WidgetPaint((tWidget *)&g_sControl);
+
+    PushButtonImageOn(&g_sOption);
+    PushButtonTextOn(&g_sOption);
+    PushButtonFillOff(&g_sOption);
+    WidgetPaint((tWidget *)&g_sOption);
+    PushButtonImageOn(&g_sMain);
+    PushButtonTextOn(&g_sMain);
+    PushButtonFillOff(&g_sMain);
+    WidgetPaint((tWidget *)&g_sMain);
 }

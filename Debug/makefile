@@ -12,9 +12,9 @@ GEN_CMDS__FLAG := -l"configPkg/linker.cmd"
 ORDERED_OBJS += \
 "./EK_TM4C1294XL.obj" \
 "./empty_min.obj" \
-"./images.obj" \
 "./drivers/Kentec320x240x16_ssd2119_spi.obj" \
 "./drivers/touch.obj" \
+"./utils/images.obj" \
 "./utils/ustdlib.obj" \
 "../EK_TM4C1294XL.cmd" \
 $(GEN_CMDS__FLAG) \
@@ -134,29 +134,29 @@ endif
 
 # Add inputs and outputs from these tool invocations to the build variables 
 EXE_OUTPUTS += \
-empty_min_EK_TM4C1294XL_TI.out \
+UI_EGH456.out \
 
 EXE_OUTPUTS__QUOTED += \
-"empty_min_EK_TM4C1294XL_TI.out" \
+"UI_EGH456.out" \
 
 
 # All Target
 all: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
-	@$(MAKE) --no-print-directory -Onone "empty_min_EK_TM4C1294XL_TI.out"
+	@$(MAKE) --no-print-directory -Onone "UI_EGH456.out"
 
 # Tool invocations
-empty_min_EK_TM4C1294XL_TI.out: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
+UI_EGH456.out: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
 	@echo 'Building target: "$@"'
 	@echo 'Invoking: Arm Linker'
-	"C:/ti/ccs1220/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/bin/armcl" -mv7M4 --code_state=16 --float_support=FPv4SPD16 -me --define=ccs="ccs" --define=PART_TM4C1294NCPDT --define=ccs --define=TIVAWARE -g --gcc --diag_warning=225 --diag_warning=255 --diag_wrap=off --display_error_number --gen_func_subsections=on --abi=eabi -z -m"empty_min_EK_TM4C1294XL_TI.map" --heap_size=1024 --stack_size=2048 -i"C:/ti/ccs1220/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/lib" -i"C:/ti/ccs1220/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/include" --reread_libs --diag_wrap=off --display_error_number --warn_sections --xml_link_info="empty_min_EK_TM4C1294XL_TI_linkInfo.xml" --rom_model -o "empty_min_EK_TM4C1294XL_TI.out" $(ORDERED_OBJS)
+	"C:/ti/ccs1220/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/bin/armcl" -mv7M4 --code_state=16 --float_support=FPv4SPD16 -me --define=ccs="ccs" --define=PART_TM4C1294NCPDT --define=ccs --define=TIVAWARE -g --gcc --diag_warning=225 --diag_warning=255 --diag_wrap=off --display_error_number --gen_func_subsections=on --abi=eabi -z -m"UI_EGH456.map" --heap_size=1024 --stack_size=2048 -i"C:/Users/robin/OneDrive/Documents/Cours/sem1_2023/EGH456/UI456/UI_EGH456" -i"C:/ti/ccs1220/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/lib" -i"C:/ti/ccs1220/ccs/tools/compiler/ti-cgt-arm_20.2.7.LTS/include" --reread_libs --diag_wrap=off --display_error_number --warn_sections --xml_link_info="UI_EGH456_linkInfo.xml" --rom_model -o "UI_EGH456.out" $(ORDERED_OBJS)
 	@echo 'Finished building target: "$@"'
 	@echo ' '
 
 # Other Targets
 clean:
 	-$(RM) $(GEN_FILES__QUOTED)$(EXE_OUTPUTS__QUOTED)
-	-$(RM) "EK_TM4C1294XL.obj" "empty_min.obj" "images.obj" "drivers\Kentec320x240x16_ssd2119_spi.obj" "drivers\touch.obj" "utils\ustdlib.obj" 
-	-$(RM) "EK_TM4C1294XL.d" "empty_min.d" "images.d" "drivers\Kentec320x240x16_ssd2119_spi.d" "drivers\touch.d" "utils\ustdlib.d" 
+	-$(RM) "EK_TM4C1294XL.obj" "empty_min.obj" "drivers\Kentec320x240x16_ssd2119_spi.obj" "drivers\touch.obj" "utils\images.obj" "utils\ustdlib.obj" 
+	-$(RM) "EK_TM4C1294XL.d" "empty_min.d" "drivers\Kentec320x240x16_ssd2119_spi.d" "drivers\touch.d" "utils\images.d" "utils\ustdlib.d" 
 	-$(RMDIR) $(GEN_MISC_DIRS__QUOTED)
 	-@echo 'Finished clean'
 	-@echo ' '

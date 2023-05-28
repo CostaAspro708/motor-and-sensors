@@ -11,7 +11,7 @@ var makeAssembly = false;
 var Executable = xdc.module('xdc.bld.Executable');
 
 var exeOpts = new Executable.Attrs({
-        cfgScript: 'C:/Users/robin/OneDrive/Documents/Cours/sem1_2023/EGH456/Lab3/empty_min_EK_TM4C1294XL_TI/empty_min.cfg',
+        cfgScript: 'C:/Users/robin/OneDrive/Documents/Cours/sem1_2023/EGH456/UI456/UI_EGH456/empty_min.cfg',
         profile: 'release',
         cfgHome: 'configPkg',
 });
@@ -41,7 +41,7 @@ else {
 
 var thisObj = {
     cfg:        '../empty_min.cfg',
-    outputPath: 'C:/Users/robin/OneDrive/Documents/Cours/sem1_2023/EGH456/Lab3/empty_min_EK_TM4C1294XL_TI/Debug/configPkg',
+    outputPath: 'C:/Users/robin/OneDrive/Documents/Cours/sem1_2023/EGH456/UI456/UI_EGH456/Debug/configPkg',
     exeName:    'empty_min' + suffix,
     exeIntName: 'empty_min' + suffix.replace('.', '_'),
     targ:       targ,

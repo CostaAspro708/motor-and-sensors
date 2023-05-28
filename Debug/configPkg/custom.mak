@@ -7,5 +7,5 @@
 #       or equal to the generated config header
 #
 linker.cmd: package/cfg/empty_min_pem4f.xdl
-	$(SED) 's"^\"\(package/cfg/empty_min_pem4fcfg.cmd\)\"$""\"C:/Users/robin/OneDrive/Documents/Cours/sem1_2023/EGH456/Lab3/empty_min_EK_TM4C1294XL_TI/Debug/configPkg/\1\""' package/cfg/empty_min_pem4f.xdl > $@
+	$(SED) 's"^\"\(package/cfg/empty_min_pem4fcfg.cmd\)\"$""\"C:/Users/robin/OneDrive/Documents/Cours/sem1_2023/EGH456/UI456/UI_EGH456/Debug/configPkg/\1\""' package/cfg/empty_min_pem4f.xdl > $@
 	-$(SETDATE) -r:max package/cfg/empty_min_pem4f.h compiler.opt compiler.opt.defs
